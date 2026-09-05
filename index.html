@@ -300,6 +300,36 @@
             display: block;
         }
 
+        /* ===== SERVER SELECTOR ===== */
+        .server-selector {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+        .server-btn {
+            background: var(--card-bg);
+            border: 1.5px solid var(--card-border);
+            color: var(--text-muted);
+            padding: 8px 14px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: inherit;
+            white-space: nowrap;
+        }
+        .server-btn.active {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: #fff;
+            box-shadow: 0 4px 12px var(--accent-glow);
+        }
+        .server-btn:active {
+            transform: scale(0.95);
+        }
+
         /* ===== SEASON/EPISODE SELECTOR ===== */
         .episode-selector {
             display: flex;
@@ -614,6 +644,14 @@
                     <iframe id="inlineVideoFrame" src="" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
                 </div>
 
+                <!-- Server Selector -->
+                <div class="server-selector" id="serverSelector" style="display:none;">
+                    <button class="server-btn active" data-server="1" onclick="changeServer(1)">Server 1</button>
+                    <button class="server-btn" data-server="2" onclick="changeServer(2)">Server 2</button>
+                    <button class="server-btn" data-server="3" onclick="changeServer(3)">Server 3</button>
+                    <button class="server-btn" data-server="4" onclick="changeServer(4)">Server 4</button>
+                </div>
+
                 <!-- Season/Episode Selector -->
                 <div class="episode-selector" id="episodeSelector" style="display:none;">
                     <div class="selector-group">
@@ -638,9 +676,20 @@
         const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
         const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w780';
 
-        // Free website embed URLs – replace with your actual pattern
-        const MOVIE_URL = 'https://v1.vidsrc.wiki/embed/movie/{id}';
-        const TV_URL = 'https://v1.vidsrc.wiki/embed/tv/{id}/{season}/{episode}';
+        // ===== SERVER URL TEMPLATES =====
+        // Replace these with your actual embed URL patterns for each server
+        const SERVER_MOVIE_URLS = [
+            'https://v1.vidsrc.wiki/embed/movie/{id}',
+            'https://vidsrc.wiki/embed/movie/{id}',
+            'https://vidsrc.sbs/embed/movie/{id}',
+            'https://player.vidlove.cc/embed/movie/{id}?download=true'
+        ];
+        const SERVER_TV_URLS = [
+            'https://v1.vidsrc.wiki/embed/tv/{id}/{season}/{episode}',
+            'https://vidsrc.wiki/embed/tv/{id}/{season}/{episode}',
+            'https://vidsrc.sbs/embed/tv/{id}/{season}/{episode}',
+            'https://player.vidlove.cc/embed/tv/{id}/{season}/{episode}?download=true'
+        ];
 
         // ===== STATE =====
         let currentTab = 'all';
@@ -661,6 +710,7 @@
         let isLoadingMore = false;
 
         let currentDetail = null;
+        let currentServer = 1; // 1-based index, default server 1
 
         // ===== LOADING SCREEN =====
         function hideLoadingScreen() {
@@ -701,6 +751,29 @@
             };
         }
 
+        // Helper: find media item by id across all arrays
+        function findItemById(id) {
+            const allLists = [...trendingMovies, ...trendingTV, ...huluData, ...animeData, ...amazonData, ...netflixData, ...movieList, ...tvList];
+            return allLists.find(item => item.id === id);
+        }
+
+        // Helper: check if an id is bookmarked (works with old string bookmarks too)
+        function isBookmarked(id) {
+            return bookmarked.some(item => (typeof item === 'string' ? item === id : item.id === id));
+        }
+
+        // Convert old string bookmarks to objects after data load
+        function migrateBookmarks() {
+            bookmarked = bookmarked.map(item => {
+                if (typeof item === 'string') {
+                    const fullItem = findItemById(item);
+                    return fullItem || null;
+                }
+                return item;
+            }).filter(item => item !== null);
+            localStorage.setItem('cineStreamBookmarks', JSON.stringify(bookmarked));
+        }
+
         async function fetchAllData() {
             try {
                 const trendingMoviesRes = await tmdbFetch('/trending/movie/week', { language: 'en-US', page: 1 });
@@ -725,6 +798,9 @@
                 tvList = trendingTV;
                 moviePage = 1;
                 tvPage = 1;
+
+                // Migrate old bookmarks (strings to objects)
+                migrateBookmarks();
 
                 renderHome();
                 renderGrid();
@@ -808,14 +884,14 @@
         }
 
         function createHorizontalCard(item) {
-            const isBookmarked = bookmarked.includes(item.id);
+            const isBookmarkedItem = isBookmarked(item.id);
             return `
                 <div class="horizontal-card" onclick="openDetail('${item.tmdbId}', '${item.type}', '${item.title.replace(/'/g, "\\'")}')">
                     <div class="poster-container">
                         ${createPosterHTML(item)}
                     </div>
-                    <button class="bookmark-btn ${isBookmarked ? 'bookmarked' : ''}" onclick="toggleBookmark('${item.id}', event)">
-                        ${isBookmarked ? '❤️' : '🤍'}
+                    <button class="bookmark-btn ${isBookmarkedItem ? 'bookmarked' : ''}" onclick="toggleBookmark('${item.id}', event)">
+                        ${isBookmarkedItem ? '❤️' : '🤍'}
                     </button>
                     <div class="media-card-body">
                         <div class="media-card-title">${item.title}</div>
@@ -830,14 +906,14 @@
         }
 
         function createGridCard(item) {
-            const isBookmarked = bookmarked.includes(item.id);
+            const isBookmarkedItem = isBookmarked(item.id);
             return `
                 <div class="media-card" onclick="openDetail('${item.tmdbId}', '${item.type}', '${item.title.replace(/'/g, "\\'")}')">
                     <div class="poster-container">
                         ${createPosterHTML(item)}
                     </div>
-                    <button class="bookmark-btn ${isBookmarked ? 'bookmarked' : ''}" onclick="toggleBookmark('${item.id}', event)">
-                        ${isBookmarked ? '❤️' : '🤍'}
+                    <button class="bookmark-btn ${isBookmarkedItem ? 'bookmarked' : ''}" onclick="toggleBookmark('${item.id}', event)">
+                        ${isBookmarkedItem ? '❤️' : '🤍'}
                     </button>
                     <div class="media-card-body">
                         <div class="media-card-title">${item.title}</div>
@@ -890,9 +966,16 @@
             const loadingMore = document.getElementById('loadingMore');
 
             let items = [];
-            if (currentTab === 'movies') { items = movieList; label.textContent = 'Movies'; }
-            else if (currentTab === 'tv') { items = tvList; label.textContent = 'TV Shows'; }
-            else if (currentTab === 'bookmarked') { items = [...movieList, ...tvList].filter(m => bookmarked.includes(m.id)); label.textContent = 'My List'; }
+            if (currentTab === 'movies') {
+                items = movieList;
+                label.textContent = 'Movies';
+            } else if (currentTab === 'tv') {
+                items = tvList;
+                label.textContent = 'TV Shows';
+            } else if (currentTab === 'bookmarked') {
+                items = bookmarked;
+                label.textContent = 'My List';
+            }
 
             if (searchQuery.trim()) {
                 const q = searchQuery.trim().toLowerCase();
@@ -911,7 +994,7 @@
         function updateBookmarkButtons() {
             document.querySelectorAll('.bookmark-btn').forEach(btn => {
                 const id = btn.getAttribute('onclick').match(/'([^']+)'/)?.[1];
-                if (id && bookmarked.includes(id)) {
+                if (id && isBookmarked(id)) {
                     btn.classList.add('bookmarked');
                     btn.innerHTML = '❤️';
                 } else {
@@ -923,9 +1006,17 @@
 
         function toggleBookmark(id, event) {
             event.stopPropagation();
-            const index = bookmarked.indexOf(id);
-            if (index > -1) { bookmarked.splice(index, 1); showToast('Removed from My List'); }
-            else { bookmarked.push(id); showToast('Added to My List 🔖'); }
+            const item = findItemById(id);
+            if (!item) return;
+
+            const index = bookmarked.findIndex(b => b.id === id);
+            if (index > -1) {
+                bookmarked.splice(index, 1);
+                showToast('Removed from My List');
+            } else {
+                bookmarked.push(item);
+                showToast('Added to My List 🔖');
+            }
             localStorage.setItem('cineStreamBookmarks', JSON.stringify(bookmarked));
             if (currentTab === 'all') renderHome();
             else renderGrid();
@@ -946,6 +1037,7 @@
             document.getElementById('detailPosterPlaceholder').style.display = 'flex';
             document.getElementById('episodeSelector').style.display = 'none';
             document.getElementById('inlinePlayerContainer').style.display = 'none';
+            document.getElementById('serverSelector').style.display = 'none';
 
             try {
                 const endpoint = type === 'movies' ? `/movie/${tmdbId}` : `/tv/${tmdbId}`;
@@ -996,6 +1088,7 @@
 
                 const playerContainer = document.getElementById('inlinePlayerContainer');
                 playerContainer.style.display = 'block';
+                document.getElementById('serverSelector').style.display = 'flex';
 
                 if (type === 'tv') {
                     setupEpisodeSelector(currentDetail.seasons);
@@ -1009,6 +1102,18 @@
             }
         }
 
+        // ===== SERVER SWITCHING =====
+        function changeServer(serverNumber) {
+            currentServer = serverNumber;
+            document.querySelectorAll('.server-btn').forEach(btn => {
+                btn.classList.toggle('active', parseInt(btn.dataset.server) === serverNumber);
+            });
+            if (currentDetail) {
+                updateInlinePlayer();
+            }
+        }
+
+        // ===== EPISODE SELECTOR =====
         function setupEpisodeSelector(seasons) {
             const selectorDiv = document.getElementById('episodeSelector');
             const seasonSelect = document.getElementById('seasonSelect');
@@ -1032,7 +1137,9 @@
 
             seasonSelect.value = validSeasons[0].season_number;
             updateEpisodes();
+            
             seasonSelect.addEventListener('change', updateEpisodes);
+            episodeSelect.addEventListener('change', updateInlinePlayer);
 
             selectorDiv.style.display = 'flex';
             updateInlinePlayer();
@@ -1059,15 +1166,20 @@
         function updateInlinePlayer() {
             if (!currentDetail) return;
             let embedUrl = '';
+            const serverIndex = currentServer - 1; // 0-based index
+
             if (currentDetail.type === 'movies') {
-                embedUrl = MOVIE_URL.replace('{id}', currentDetail.tmdbId);
+                const template = SERVER_MOVIE_URLS[serverIndex] || SERVER_MOVIE_URLS[0];
+                embedUrl = template.replace('{id}', currentDetail.tmdbId);
             } else if (currentDetail.type === 'tv') {
                 const season = document.getElementById('seasonSelect').value;
                 const episode = document.getElementById('episodeSelect').value;
-                embedUrl = TV_URL.replace('{id}', currentDetail.tmdbId)
+                const template = SERVER_TV_URLS[serverIndex] || SERVER_TV_URLS[0];
+                embedUrl = template.replace('{id}', currentDetail.tmdbId)
                                 .replace('{season}', season)
                                 .replace('{episode}', episode);
             }
+
             const iframe = document.getElementById('inlineVideoFrame');
             iframe.src = embedUrl;
         }
@@ -1097,12 +1209,11 @@
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
-        // ===== SEARCH (bottom tab) =====
+        // ===== SEARCH =====
         function openSearchFromTab(tabEl) {
             openSearch();
         }
 
-        // ===== SEARCH =====
         function openSearch() {
             document.getElementById('searchOverlay').classList.add('active');
             document.getElementById('searchInput').value = searchQuery;
